@@ -1,0 +1,104 @@
+{
+  "info": {
+    "_postman_id": "rutas-collection-0001",
+    "name": "Rutas API - Transportes Andinos",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Colección para probar endpoints de rutas. Usa las variables `baseUrl`, `token`, `rutaId` y `tarifaId`."
+  },
+  "item": [
+    {
+      "name": "Listar rutas",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rutas",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "rutas"]
+        }
+      }
+    },
+    {
+      "name": "Obtener ruta por id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rutas/{{rutaId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "rutas", "{{rutaId}}"]
+        }
+      }
+    },
+    {
+      "name": "Crear ruta con tarifas (admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nombre\": \"Lima - Cusco\",\n  \"origen\": \"Lima\",\n  \"destino\": \"Cusco\",\n  \"distancia_km\": 1100.5,\n  \"duracion_horas\": 20.5,\n  \"tarifas\": [\n    {\n      \"tipo_asiento\": \"normal\",\n      \"precio\": 120.00\n    },\n    {\n      \"tipo_asiento\": \"vip\",\n      \"precio\": 180.00\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/rutas",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "rutas"]
+        }
+      }
+    },
+    {
+      "name": "Actualizar ruta y tarifas (admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nombre\": \"Lima - Cusco Express\",\n  \"origen\": \"Lima\",\n  \"destino\": \"Cusco\",\n  \"distancia_km\": 1098.25,\n  \"duracion_horas\": 19.5,\n  \"tarifas\": [\n    {\n      \"tipo_asiento\": \"normal\",\n      \"precio\": 130.00\n    },\n    {\n      \"tipo_asiento\": \"vip\",\n      \"precio\": 195.00\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/rutas/{{rutaId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "rutas", "{{rutaId}}"]
+        }
+      }
+    },
+    {
+      "name": "Eliminar ruta (admin)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rutas/{{rutaId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "rutas", "{{rutaId}}"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "token", "value": "" },
+    { "key": "rutaId", "value": "" },
+    { "key": "tarifaId", "value": "" }
+  ]
+}

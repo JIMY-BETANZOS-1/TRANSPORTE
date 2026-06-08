@@ -1,0 +1,9 @@
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tiene_wifi BOOLEAN DEFAULT FALSE;
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tiene_tv BOOLEAN DEFAULT FALSE;
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tiene_usb BOOLEAN DEFAULT FALSE;
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tiene_bano BOOLEAN DEFAULT FALSE;
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tiene_aire BOOLEAN DEFAULT FALSE;
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS tipo_asiento VARCHAR(20) DEFAULT 'semi-reclinable'
+  CHECK (tipo_asiento IN ('normal','semi-reclinable','reclinable-180'));
+ALTER TABLE buses ADD COLUMN IF NOT EXISTS nivel_servicio VARCHAR(20) DEFAULT 'economico'
+  CHECK (nivel_servicio IN ('economico','ejecutivo','vip'));

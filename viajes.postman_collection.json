@@ -1,0 +1,116 @@
+{
+  "info": {
+    "_postman_id": "viajes-collection-0001",
+    "name": "Viajes API - Transportes Andinos",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Colección para probar endpoints de viajes. Usa las variables `baseUrl`, `token`, `viajeId`, `origen`, `destino` y `fecha`."
+  },
+  "item": [
+    {
+      "name": "Listar viajes",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/viajes?origen={{origen}}&destino={{destino}}&fecha={{fecha}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "viajes"],
+          "query": [
+            { "key": "origen", "value": "{{origen}}" },
+            { "key": "destino", "value": "{{destino}}" },
+            { "key": "fecha", "value": "{{fecha}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Obtener viaje por id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/viajes/{{viajeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "viajes", "{{viajeId}}"]
+        }
+      }
+    },
+    {
+      "name": "Crear viaje (admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ruta_id\": 1,\n  \"bus_id\": 1,\n  \"fecha_salida\": \"2026-06-01T08:00:00.000Z\",\n  \"fecha_llegada\": \"2026-06-01T20:30:00.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/viajes",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "viajes"]
+        }
+      }
+    },
+    {
+      "name": "Cambiar estado del viaje (admin u operador)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"estado\": \"en_venta\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/viajes/{{viajeId}}/estado",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "viajes", "{{viajeId}}", "estado"]
+        }
+      }
+    },
+    {
+      "name": "Cancelar viaje (admin u operador)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"estado\": \"cancelado\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/viajes/{{viajeId}}/estado",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "viajes", "{{viajeId}}", "estado"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "token", "value": "" },
+    { "key": "viajeId", "value": "" },
+    { "key": "origen", "value": "Lima" },
+    { "key": "destino", "value": "Cusco" },
+    { "key": "fecha", "value": "2026-06-01" }
+  ]
+}

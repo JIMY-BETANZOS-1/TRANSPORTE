@@ -1,0 +1,122 @@
+{
+  "info": {
+    "_postman_id": "buses-collection-0001",
+    "name": "Buses API - Transportes Andinos",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Colección para probar endpoints de buses. Use la variable `baseUrl` y `token`."
+  },
+  "item": [
+    {
+      "name": "Listar buses",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/buses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses"]
+        }
+      }
+    },
+    {
+      "name": "Obtener bus por id",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/buses/{{id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses", "{{id}}"]
+        }
+      }
+    },
+    {
+      "name": "Crear bus (admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"placa\": \"ABC-123\",\n  \"modelo\": \"Volvo 9700\",\n  \"anio\": 2018,\n  \"num_pisos\": 1,\n  \"capacidad_total\": 50,\n  \"servicios\": [\"wifi\", \"aire_acondicionado\"],\n  \"estado\": \"operativo\",\n  \"fotos\": []\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/buses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses"]
+        }
+      }
+    },
+    {
+      "name": "Actualizar bus (admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"placa\": \"ABC-123\",\n  \"modelo\": \"Volvo 9700 Updated\",\n  \"anio\": 2019,\n  \"num_pisos\": 1,\n  \"capacidad_total\": 52,\n  \"servicios\": [\"wifi\"],\n  \"estado\": \"operativo\",\n  \"fotos\": []\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/buses/{{id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses", "{{id}}"]
+        }
+      }
+    },
+    {
+      "name": "Cambiar estado (admin u operador)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"estado\": \"mantenimiento\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/buses/{{id}}/estado",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses", "{{id}}", "estado"]
+        }
+      }
+    },
+    {
+      "name": "Desactivar bus (admin)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/buses/{{id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "buses", "{{id}}"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "token", "value": "" },
+    { "key": "id", "value": "" }
+  ]
+}
