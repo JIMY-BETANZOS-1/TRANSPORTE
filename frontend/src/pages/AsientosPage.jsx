@@ -78,44 +78,48 @@ const LEGEND = ['disponible', 'reservado', 'pagado', 'liberado'].map(e => ({
   label:  SEAT_LABELS[e],
 }));
 
-// Parses "1A", "12B", "A1", "B12" → { row, col }
-function parseSeatCode(codigo) {
-  const str = String(codigo || '');
-  const numFirst = str.match(/^(\d+)([A-Za-z])$/);
-  if (numFirst) return { row: Number(numFirst[1]), col: numFirst[2].toUpperCase() };
-  const colFirst = str.match(/^([A-Za-z])(\d+)$/);
-  if (colFirst) return { row: Number(colFirst[2]), col: colFirst[1].toUpperCase() };
-  return { row: 0, col: '' };
-}
+function buildSeatLayout(seats) {
+  const seatMap = new Map();
+  let maxRow = 0;
+  let maxCol = 0;
 
-function buildSeatGrid(seats) {
-  const rowMap = {};
   for (const seat of seats) {
-    const { row, col } = parseSeatCode(seat.codigo || seat.numero);
-    if (!rowMap[row]) rowMap[row] = {};
-    rowMap[row][col] = seat;
+    const row = Number(seat?.fila ?? 0);
+    const col = Number(seat?.columna ?? 0);
+
+    if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+
+    seatMap.set(`${row}-${col}`, seat);
+    maxRow = Math.max(maxRow, row);
+    maxCol = Math.max(maxCol, col);
   }
+
   return {
-    rowMap,
-    rows: Object.keys(rowMap).map(Number).sort((a, b) => a - b),
+    seatMap,
+    rows: Array.from({ length: maxRow || 1 }, (_, index) => index + 1),
+    cols: Array.from({ length: maxCol || 1 }, (_, index) => index + 1),
   };
 }
 
-// null in layout = aisle
-const COL_LAYOUT = ['A', 'B', null, 'C', 'D'];
-
 // ── BusMap component ───────────────────────────────────────
-function BusMap({ seats, submittingId, onSelect }) {
-  const { rowMap, rows } = buildSeatGrid(seats);
+function BusMap({ seats, tarifas = [], submittingId, onSelect, asientosSeleccionados = [] }) {
+  const filasUnicas = [...new Set(seats.map((s) => Number(s?.fila ?? 0)).filter((n) => Number.isFinite(n)))].sort((a, b) => a - b);
+  const filaIndex = filasUnicas.reduce((acc, fila, index) => {
+    acc[fila] = index + 1;
+    return acc;
+  }, {});
 
   return (
     <div style={{
       backgroundColor: '#1a237e',
       borderRadius: '36px 36px 20px 20px',
       padding: '20px 24px 24px',
-      maxWidth: '272px',
+      width: 'fit-content',
+      maxWidth: '100%',
       margin: '0 auto',
       boxShadow: '0 8px 40px rgba(26,35,126,.45)',
+      maxHeight: '600px',
+      overflowY: 'auto',
     }}>
       {/* Frente */}
       <div style={{
@@ -132,112 +136,97 @@ function BusMap({ seats, submittingId, onSelect }) {
         🚌 Frente
       </div>
 
-      {/* Column headers */}
+      {/* Seat grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '44px 44px 24px 44px 44px',
+        gridTemplateColumns: '1fr 1fr 0.5fr 1fr 1fr',
+        gridTemplateRows: `repeat(${Math.max(filasUnicas.length, 1)}, auto)`,
         gap: '6px',
         justifyContent: 'center',
-        marginBottom: '8px',
+        alignItems: 'center',
+        margin: '10px 0 8px',
+        padding: '4px 0',
       }}>
-        {COL_LAYOUT.map((col, i) => (
-          <div
-            key={i}
-            style={{
-              textAlign: 'center',
-              color: 'rgba(255,255,255,.4)',
-              fontSize: '.65rem',
-              fontWeight: 700,
-              letterSpacing: '1px',
-            }}
-          >
-            {col ?? ''}
-          </div>
-        ))}
-      </div>
+        {seats.map((seat) => {
+          const row = Number(seat?.fila ?? 0);
+          const col = Number(seat?.columna ?? 0);
+          const gridRowStart = filaIndex[row] || 1;
+          const gridColStart = col > 2 ? col + 1 : col || 1;
+          const estaSeleccionadoLocalmente = asientosSeleccionados.some(a => a.id === seat.id);
+          let bgColor = SEAT_COLORS[seat.estado] ?? '#9e9e9e';
+          if (estaSeleccionadoLocalmente) {
+            bgColor = '#1a237e';
+          }
+          const label        = SEAT_LABELS[seat.estado] ?? seat.estado;
+          const isAvailable  = seat.estado === 'disponible' || seat.estado === 'liberado';
+          const isSubmitting = submittingId === seat.id;
+          const showOrange   = isSubmitting;
 
-      {/* Seat rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {rows.map(row => (
-          <div
-            key={row}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '44px 44px 24px 44px 44px',
-              gap: '6px',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            {COL_LAYOUT.map((col, i) => {
-              // Aisle divider
-              if (col === null) {
-                return (
-                  <div
-                    key="aisle"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '44px' }}
-                  >
-                    <div style={{ width: '1px', height: '26px', backgroundColor: 'rgba(255,255,255,.1)' }} />
-                  </div>
-                );
-              }
+          const tipoAsiento = seat?.tipo || 'normal';
+          const tarifaMatch = tarifas.find(
+            (t) => String(t.tipo_asiento).toLowerCase() === String(tipoAsiento).toLowerCase()
+          );
+          const precioAsiento = tarifaMatch?.precio
+            ? Number(tarifaMatch.precio)
+            : tarifas.length > 0
+              ? Math.min(...tarifas.map((t) => Number(t.precio)))
+              : 0;
 
-              const seat = rowMap[row]?.[col];
-
-              // Empty slot (bus might not have every seat)
-              if (!seat) {
-                return <div key={col} style={{ width: '44px', height: '44px' }} />;
-              }
-
-              const bgColor      = SEAT_COLORS[seat.estado] ?? '#9e9e9e';
-              const label        = SEAT_LABELS[seat.estado] ?? seat.estado;
-              const isAvailable  = seat.estado === 'disponible' || seat.estado === 'liberado';
-              const isSubmitting = submittingId === seat.id;
-              const showOrange   = isSubmitting;
-
-              return (
-                <button
-                  key={col}
-                  type="button"
-                  disabled={!isAvailable || isSubmitting}
-                  onClick={() => onSelect(seat.id)}
-                  title={`Asiento ${seat.codigo || seat.numero} — ${label}`}
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '8px',
-                    border: showOrange ? '3px solid #ff6f00' : '2px solid rgba(255,255,255,.12)',
-                    backgroundColor: bgColor,
-                    color: '#ffffff',
-                    fontSize: '.65rem',
-                    fontWeight: 800,
-                    cursor: isAvailable && !isSubmitting ? 'pointer' : 'default',
-                    opacity: isSubmitting ? .65 : 1,
-                    transition: 'transform .12s, box-shadow .12s',
-                    boxShadow: showOrange ? '0 0 0 2px rgba(255,111,0,.4)' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0,
-                    lineHeight: 1,
-                  }}
-                  onMouseEnter={e => {
-                    if (isAvailable && !isSubmitting) {
-                      e.currentTarget.style.transform = 'scale(1.12)';
-                      e.currentTarget.style.boxShadow = `0 4px 14px ${bgColor}99`;
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = showOrange ? '0 0 0 2px rgba(255,111,0,.4)' : 'none';
-                  }}
-                >
-                  {isSubmitting ? '…' : row}
-                </button>
-              );
-            })}
-          </div>
-        ))}
+          return (
+            <button
+              key={seat.id ?? `${row}-${col}`}
+              type="button"
+              disabled={!isAvailable || isSubmitting}
+              onClick={() => onSelect(seat.id)}
+              title={`Asiento ${seat.codigo || seat.numero} — ${label}`}
+              style={{
+                gridRowStart: gridRowStart,
+                gridColumnStart: gridColStart,
+                width: '44px',
+                minHeight: '52px',
+                height: 'auto',
+                borderRadius: '8px',
+                border: showOrange ? '3px solid #ff6f00' : estaSeleccionadoLocalmente ? '2px solid #ffffff' : '2px solid rgba(255,255,255,.12)',
+                backgroundColor: bgColor,
+                color: '#ffffff',
+                fontSize: '.65rem',
+                fontWeight: 800,
+                cursor: isAvailable && !isSubmitting ? 'pointer' : 'default',
+                opacity: isSubmitting ? .65 : 1,
+                transition: 'transform .12s, box-shadow .12s',
+                boxShadow: showOrange ? '0 0 0 2px rgba(255,111,0,.4)' : estaSeleccionadoLocalmente ? '0 0 0 2px rgba(26,35,126,.4)' : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px 4px',
+                lineHeight: 1,
+                textAlign: 'center',
+              }}
+              onMouseEnter={e => {
+                if (isAvailable && !isSubmitting) {
+                  e.currentTarget.style.transform = 'scale(1.12)';
+                  e.currentTarget.style.boxShadow = `0 4px 14px ${bgColor}99`;
+                }
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = showOrange ? '0 0 0 2px rgba(255,111,0,.4)' : estaSeleccionadoLocalmente ? '0 0 0 2px rgba(26,35,126,.4)' : 'none';
+              }}
+            >
+              {isSubmitting ? '…' : (
+                <>
+                  <div style={{ fontSize: '.75rem', fontWeight: 700 }}>{seat.codigo || seat.numero || `${row}-${col}`}</div>
+                  {isAvailable && (
+                    <div style={{ fontSize: '.62rem', opacity: 0.85 }}>
+                      S/{precioAsiento.toFixed(0)}
+                    </div>
+                  )}
+                </>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Puerta */}
@@ -258,6 +247,8 @@ function BusMap({ seats, submittingId, onSelect }) {
   );
 }
 
+export { BusMap };
+
 // ── Page ───────────────────────────────────────────────────
 export default function AsientosPage() {
   const navigate = useNavigate();
@@ -272,12 +263,14 @@ export default function AsientosPage() {
   const [countdown, setCountdown] = useState('');
   const [lastReserva, setLastReserva] = useState(null);
   const [activePiso, setActivePiso] = useState(1);
+  const [asientosSeleccionados, setAsientosSeleccionados] = useState([]);
 
   // Derive num_pisos from seat data
   const numPisos = asientos.some(a => a.piso === 2) ? 2 : 1;
   const seatsForPiso = asientos.filter(a => (a.piso ?? 1) === activePiso);
   const availableCount = seatsForPiso.filter(a => a.estado === 'disponible').length;
   const viajeRuta = viaje?.ruta || {};
+  const tarifas = viajeRuta.tarifas || [];
   const bus = viaje?.bus || {};
   const serviceLevelMeta = getServiceLevelMeta(bus.nivel_servicio);
   const seatTypeMeta = getSeatTypeMeta(bus.tipo_asiento);
@@ -335,45 +328,82 @@ export default function AsientosPage() {
   }, [reservaExpiraEn]);
 
   async function handleSelectSeat(asientoId) {
-    setSubmittingId(asientoId);
+    const asientoSeleccionado = asientos.find((a) => a.id === asientoId);
+    if (!asientoSeleccionado || asientoSeleccionado.estado !== 'disponible') return;
+
+    setAsientosSeleccionados((prev) => {
+      const yaSeleccionado = prev.find((a) => a.id === asientoId);
+      if (yaSeleccionado) {
+        // Deseleccionar
+        return prev.filter((a) => a.id !== asientoId);
+      }
+      // Seleccionar — máximo 5 asientos
+      if (prev.length >= 5) {
+        setError('Máximo 5 asientos por compra.');
+        return prev;
+      }
+      const tarifas = viaje?.ruta?.tarifas || [];
+      const tipoAsiento = asientoSeleccionado?.tipo || 'normal';
+      const tarifaMatch = tarifas.find(
+        (t) => String(t.tipo_asiento).toLowerCase() === String(tipoAsiento).toLowerCase()
+      );
+      const precio = tarifaMatch?.precio
+        ? Number(tarifaMatch.precio)
+        : tarifas.length > 0
+          ? Math.min(...tarifas.map((t) => Number(t.precio)))
+          : 0;
+      return [...prev, {
+        id: asientoSeleccionado.id,
+        codigo: asientoSeleccionado.codigo,
+        tipo: tipoAsiento,
+        precio,
+      }];
+    });
+  }
+
+  async function handleConfirmarSeleccion() {
+    if (asientosSeleccionados.length === 0) return;
+    setSubmittingId('confirming');
     setError('');
-    setSuccess('');
-    setReservaExpiraEn('');
-    setCountdown('');
-    setLastReserva(null);
-
-    const asientoSeleccionado = asientos.find((asiento) => asiento.id === asientoId);
-
     try {
-      const { data } = await api.post('/api/asientos/seleccionar', {
-        viaje_id,
-        asiento_id: asientoId,
-        pasajero_id: 1,
-      });
-      if (data?.reserva_id && data?.expira_en) {
-        setLastReserva({
-          reserva_id: data.reserva_id,
-          expira_en: data.expira_en,
-          asiento: asientoSeleccionado?.codigo || asientoSeleccionado?.numero || asientoSeleccionado?.id,
+      const reservas = [];
+      for (const asiento of asientosSeleccionados) {
+        const { data } = await api.post('/api/asientos/seleccionar', {
           viaje_id,
-          monto: 45.0,
+          asiento_id: asiento.id,
+          pasajero_id: 1,
         });
-        setReservaExpiraEn(data.expira_en);
-        setSuccess('Asiento seleccionado correctamente.');
-      } else {
-        setSuccess('Asiento seleccionado correctamente.');
+        if (data?.reserva_id) {
+          reservas.push({
+            reserva_id: data.reserva_id,
+            expira_en: data.expira_en,
+            asiento: asiento,
+          });
+        }
       }
 
-      const { data: refreshedData } = await api.get(`/api/asientos/${viaje_id}`);
-      if (Array.isArray(refreshedData)) {
-        setAsientos(refreshedData);
-        setViaje(null);
-      } else {
-        setAsientos(Array.isArray(refreshedData?.asientos) ? refreshedData.asientos : []);
-        setViaje(refreshedData?.viaje || null);
-      }
-    } catch (selectError) {
-      setError(selectError?.response?.data?.message || 'No se pudo seleccionar el asiento.');
+      const montoTotal = asientosSeleccionados.reduce((sum, a) => sum + a.precio, 0);
+      const primeraExpiracion = reservas[0]?.expira_en || '';
+
+      navigate('/pago', {
+        state: {
+          reservas,
+          reserva_id: reservas[0]?.reserva_id,
+          expira_en: primeraExpiracion,
+          asientos: asientosSeleccionados,
+          asiento: asientosSeleccionados[0] || {},
+          viaje: {
+            origen: viaje?.ruta?.origen || '',
+            destino: viaje?.ruta?.destino || '',
+            fecha_salida: viaje?.fecha_salida || '',
+            ruta_nombre: viaje?.ruta?.nombre || '',
+          },
+          viaje_id,
+          monto: montoTotal,
+        },
+      });
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Error al reservar los asientos.');
     } finally {
       setSubmittingId(null);
     }
@@ -463,31 +493,6 @@ export default function AsientosPage() {
           <div className="alert alert-danger mb-4" role="alert">{error}</div>
         ) : null}
 
-        {success ? (
-          <div className="alert alert-success mb-4" role="alert">
-            <strong>¡Asiento reservado!</strong> {success}
-            {countdown ? (
-              <div className="mt-1" style={{ fontSize: '.9rem' }}>
-                ⏱ Tiempo restante: <strong>{countdown}</strong>
-              </div>
-            ) : null}
-            {lastReserva ? (
-              <div className="mt-3">
-                <button
-                  type="button"
-                  className="btn btn-sm fw-semibold"
-                  style={{ backgroundColor: '#ff6f00', borderColor: '#ff6f00', color: '#ffffff', borderRadius: '6px' }}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#e65100'; e.currentTarget.style.borderColor = '#e65100'; }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#ff6f00'; e.currentTarget.style.borderColor = '#ff6f00'; }}
-                  onClick={() => navigate('/pago', { state: lastReserva })}
-                >
-                  Continuar al pago →
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         <div className="d-flex justify-content-center">
           <div
             className="card border-0"
@@ -496,19 +501,47 @@ export default function AsientosPage() {
             <div className="card-body p-4">
               {/* Available count */}
               {!loading && asientos.length > 0 ? (
-                <div className="text-center mb-3">
-                  <span style={{
-                    display: 'inline-block',
-                    backgroundColor: '#e8f5e9',
-                    color: '#2e7d32',
-                    borderRadius: '999px',
-                    padding: '4px 14px',
-                    fontSize: '.8rem',
-                    fontWeight: 600,
+                <>
+                  <div style={{
+                    background: '#fff3e0',
+                    border: '1px solid #ffb74d',
+                    borderRadius: '12px',
+                    padding: '1rem 1.25rem',
+                    marginBottom: '1.5rem',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '1.5rem',
+                    alignItems: 'center',
                   }}>
-                    {availableCount} {availableCount === 1 ? 'asiento disponible' : 'asientos disponibles'}
-                  </span>
-                </div>
+                    <span style={{ fontWeight: 700, color: '#e65100' }}>💰 Precios por tipo de asiento:</span>
+                    {(tarifas || []).map((t) => (
+                      <span key={t.id} style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '.4rem',
+                        fontWeight: 600,
+                        color: '#5d4037'
+                      }}>
+                        {String(t.tipo_asiento).toLowerCase() === 'vip' ? '👑' : '💺'}
+                        {String(t.tipo_asiento).toUpperCase()}: S/ {Number(t.precio).toFixed(2)}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="text-center mb-3">
+                    <span style={{
+                      display: 'inline-block',
+                      backgroundColor: '#e8f5e9',
+                      color: '#2e7d32',
+                      borderRadius: '999px',
+                      padding: '4px 14px',
+                      fontSize: '.8rem',
+                      fontWeight: 600,
+                    }}>
+                      {availableCount} {availableCount === 1 ? 'asiento disponible' : 'asientos disponibles'}
+                    </span>
+                  </div>
+                </>
               ) : null}
 
               {/* Floor tabs — only for 2-floor buses */}
@@ -555,8 +588,10 @@ export default function AsientosPage() {
               ) : (
                 <BusMap
                   seats={seatsForPiso}
+                  tarifas={tarifas}
                   submittingId={submittingId}
                   onSelect={handleSelectSeat}
+                  asientosSeleccionados={asientosSeleccionados}
                 />
               )}
 
@@ -582,6 +617,38 @@ export default function AsientosPage() {
             </div>
           </div>
         </div>
+
+        {/* Sticky panel para asientos seleccionados */}
+        {asientosSeleccionados.length > 0 ? (
+          <div style={{
+            position: 'sticky',
+            bottom: 0,
+            background: '#fff',
+            borderTop: '2px solid #e9ecef',
+            padding: '1rem',
+            borderRadius: '0 0 16px 16px',
+            boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
+            marginTop: '2rem',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '.5rem' }}>
+              <span style={{ fontWeight: 700 }}>
+                {asientosSeleccionados.length} asiento(s) seleccionado(s):
+                {' '}{asientosSeleccionados.map(a => a.codigo).join(', ')}
+              </span>
+              <span style={{ fontWeight: 800, color: '#1a237e', fontSize: '1.1rem' }}>
+                Total: S/ {asientosSeleccionados.reduce((sum, a) => sum + a.precio, 0).toFixed(2)}
+              </span>
+            </div>
+            <button
+              className="btn w-100"
+              style={{ background: '#f57c00', color: '#fff', fontWeight: 700, borderRadius: '10px' }}
+              onClick={handleConfirmarSeleccion}
+              disabled={submittingId === 'confirming'}
+            >
+              {submittingId === 'confirming' ? 'Procesando...' : 'Continuar al pago →'}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

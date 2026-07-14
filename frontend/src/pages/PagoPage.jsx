@@ -39,6 +39,29 @@ function formatCardExpiry(value) {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
+function MapaRuta({ origen, destino }) {
+  if (!origen || !destino) return null;
+
+  const origenEncoded = encodeURIComponent(`${origen}, Peru`);
+  const destinoEncoded = encodeURIComponent(`${destino}, Peru`);
+  const src = `https://maps.google.com/maps?q=from+${origenEncoded}+to+${destinoEncoded}&output=embed`;
+
+  return (
+    <div style={{ marginTop: '1rem', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e0e0e0' }}>
+      <iframe
+        title="Ruta del viaje"
+        src={src}
+        width="100%"
+        height="220"
+        style={{ border: 0, display: 'block' }}
+        allowFullScreen
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+    </div>
+  );
+}
+
 function detectCardBrand(cardNumber) {
   const firstDigit = String(cardNumber || '').replace(/\D/g, '').charAt(0);
   if (firstDigit === '4') return 'visa';
@@ -108,11 +131,13 @@ export default function PagoPage() {
   const reservaId = reservaIdFromState || reservaIdParam || '';
   const expiraEn = state.expira_en || state.expiraEn || '';
   const asiento = state.asiento || {};
+  const asientos = state.asientos || [];
   const viaje = state.viaje || {};
   const montoRaw = state.monto ?? 0;
 
   const [countdown, setCountdown] = useState(formatCountdown(expiraEn));
-  const [metodo, setMetodo] = useState('culqi');
+  const [metodoPago, setMetodoPago] = useState('yape');
+  const [codigoOperacion, setCodigoOperacion] = useState('');
   const [datosPasajero, setDatosPasajero] = useState({
     nombre: '',
     dni: '',
@@ -127,22 +152,29 @@ export default function PagoPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [confirmation, setConfirmation] = useState(null);
+  const [pagoExitoso, setPagoExitoso] = useState(false);
+  const [successEmail, setSuccessEmail] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const summary = useMemo(
-    () => ({
-      origenDestino: viaje.origen && viaje.destino ? `${viaje.origen} → ${viaje.destino}` : 'Resumen no disponible',
-      asiento: asiento.codigo || asiento.numero || asiento.id || 'Asiento no disponible',
-      monto: formatMoney(montoRaw),
-    }),
-    [asiento.codigo, asiento.id, asiento.numero, montoRaw, viaje.destino, viaje.origen]
+    () => {
+      const asientosLista = asientos.length > 0
+        ? asientos.map(a => a.codigo).join(', ')
+        : asiento.codigo || asiento.numero || asiento.id || 'Asiento no disponible';
+      return {
+        origenDestino: viaje.origen && viaje.destino ? `${viaje.origen} → ${viaje.destino}` : 'Resumen no disponible',
+        asiento: asientosLista,
+        monto: formatMoney(montoRaw),
+      };
+    },
+    [asiento.codigo, asiento.id, asiento.numero, asientos, montoRaw, viaje.destino, viaje.origen]
   );
 
-  const methodMeta = getMethodMeta(metodo);
+  const methodMeta = getMethodMeta(metodoPago);
   const cardBrand = detectCardBrand(datosTarjeta.numero);
   const cardBrandLabel = getBrandLabel(cardBrand);
-  const shouldShowCardForm = metodo === 'culqi';
-  const shouldShowQrPayment = metodo === 'yape' || metodo === 'plin';
+  const shouldShowCardForm = metodoPago === 'culqi';
+  const shouldShowQrPayment = metodoPago === 'yape' || metodoPago === 'plin';
 
   useEffect(() => {
     if (!expiraEn) return undefined;
@@ -200,25 +232,36 @@ export default function PagoPage() {
     setLoading(true);
 
     try {
+      if (!/^\d{6}$/.test(codigoOperacion)) {
+        setError('El código de operación debe tener exactamente 6 dígitos numéricos.');
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         reserva_id: reservaIdFromState,
-        metodo: String(metodo).toLowerCase(),
+        nombre: datosPasajero.nombre,
+        dni: datosPasajero.dni,
+        email: datosPasajero.email,
+        telefono: datosPasajero.telefono,
+        metodo_pago: metodoPago,
+        codigo_operacion: codigoOperacion,
+        ruta: summary.origenDestino,
+        asiento: summary.asiento,
+        fecha_salida: viaje.fecha_salida || '',
         monto,
-        datos_pasajero: {
-          nombre: datosPasajero.nombre,
-          dni: datosPasajero.dni,
-          email: datosPasajero.email,
-          telefono: datosPasajero.telefono,
-        },
       };
 
-      console.log('POST /api/pagos body:', payload);
+      console.log('POST /api/pagos/confirmar body:', payload);
 
-      const { data } = await api.post('/api/pagos', payload);
-      setConfirmation({
-        reservaId: data?.codigo_reserva || data?.reserva_id || reservaIdFromState,
-        message: data?.message || 'Pago confirmado correctamente.',
-      });
+      const { data } = await api.post('/api/pagos/confirmar', payload);
+      if (data?.success === true) {
+        setPagoExitoso(true);
+        setSuccessEmail(datosPasajero.email);
+        setSuccessMessage(data?.mensaje || 'Pago confirmado correctamente.');
+      } else {
+        setError(data?.message || 'No se pudo confirmar el pago.');
+      }
     } catch (paymentError) {
       setError(paymentError?.response?.data?.message || 'No se pudo confirmar el pago.');
     } finally {
@@ -232,7 +275,7 @@ export default function PagoPage() {
   }
 
   // ── Pantalla de confirmación ───────────────────────────────
-  if (confirmation) {
+  if (pagoExitoso) {
     return (
       <div style={{ flex: 1, backgroundColor: '#f8f9fa', paddingBottom: '3rem' }}>
         <div style={{
@@ -242,10 +285,10 @@ export default function PagoPage() {
         }}>
           <div className="container">
             <h1 style={{ color: '#ffffff', fontSize: '1.5rem', fontWeight: 800, marginBottom: '.3rem' }}>
-              Confirmación de pago
+              Pago confirmado
             </h1>
             <p style={{ color: 'rgba(255,255,255,.6)', margin: 0, fontSize: '.9rem' }}>
-              Transportes Andinos — tu reserva está confirmada
+              Se envió el comprobante por correo
             </p>
           </div>
         </div>
@@ -258,50 +301,20 @@ export default function PagoPage() {
                 style={{ borderRadius: '16px', boxShadow: '0 4px 24px rgba(0,0,0,.08)' }}
               >
                 <div className="card-body p-4 p-md-5">
-                  <div style={{ fontSize: '4rem', lineHeight: 1, marginBottom: '1rem' }}>🎉</div>
-                  <div
-                    style={{
-                      display: 'inline-block',
-                      backgroundColor: '#e8f5e9',
-                      color: '#2e7d32',
-                      borderRadius: '999px',
-                      padding: '4px 16px',
-                      fontSize: '.8rem',
-                      fontWeight: 700,
-                      letterSpacing: '.5px',
-                      textTransform: 'uppercase',
-                      marginBottom: '1rem',
-                    }}
-                  >
-                    ✓ Pago exitoso
-                  </div>
-                  <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1a237e', marginBottom: '.75rem' }}>
-                    {confirmation.message}
-                  </h2>
-                  <div
-                    style={{
-                      backgroundColor: '#f8f9fa',
-                      borderRadius: '10px',
-                      padding: '1rem',
-                      marginBottom: '1.5rem',
-                    }}
-                  >
-                    <p style={{ fontSize: '.8rem', color: '#6c757d', margin: '0 0 .25rem' }}>
-                      Código de reserva
-                    </p>
-                    <p style={{ fontSize: '1.3rem', fontWeight: 800, color: '#1a237e', margin: 0, letterSpacing: '1px' }}>
-                      {confirmation.reservaId}
-                    </p>
-                  </div>
+                  <div style={{ fontSize: '3rem' }}>✅</div>
+                  <h4 className="fw-bold mt-2" style={{ marginBottom: '1rem' }}>
+                    ¡Pago confirmado!
+                  </h4>
+                  <p>Se envió el comprobante a <strong>{successEmail}</strong></p>
+
+                  <MapaRuta origen={viaje.origen} destino={viaje.destino} />
+
                   <button
                     type="button"
-                    className="btn fw-semibold"
-                    style={{ ...BTN_ORANGE.base, padding: '.65rem 2rem' }}
-                    onMouseEnter={e => Object.assign(e.currentTarget.style, BTN_ORANGE.hover)}
-                    onMouseLeave={e => Object.assign(e.currentTarget.style, BTN_ORANGE.leave)}
-                    onClick={() => navigate('/buscar')}
+                    className="btn btn-primary mt-2"
+                    onClick={() => navigate('/')}
                   >
-                    Buscar otro viaje
+                    Volver al inicio
                   </button>
                 </div>
               </div>
@@ -382,6 +395,8 @@ export default function PagoPage() {
                       {summary.monto}
                     </dd>
                   </div>
+
+                  <MapaRuta origen={viaje.origen} destino={viaje.destino} />
 
                   <div
                     style={{
@@ -501,20 +516,36 @@ export default function PagoPage() {
                     </div>
 
                     <div className="col-12">
-                      <label htmlFor="metodo" className="form-label fw-semibold" style={{ fontSize: '.85rem' }}>
+                      <label htmlFor="metodoPago" className="form-label fw-semibold" style={{ fontSize: '.85rem' }}>
                         Método de pago
                       </label>
                       <select
-                        id="metodo"
+                        id="metodoPago"
                         className="form-select"
                         style={{ borderRadius: '6px', padding: '.6rem .9rem' }}
-                        value={metodo}
-                        onChange={(event) => setMetodo(event.target.value)}
+                        value={metodoPago}
+                        onChange={(event) => setMetodoPago(event.target.value)}
                       >
-                        <option value="culqi">💳 Tarjeta Débito/Crédito</option>
                         <option value="yape">📱 Yape</option>
-                        <option value="plin">📲 Plin</option>
+                        <option value="plin">💜 Plin</option>
+                        <option value="culqi">💳 Tarjeta (Culqi)</option>
                       </select>
+                    </div>
+                    <div className="col-12">
+                      <div className="mb-3">
+                        <label className="form-label fw-semibold">🔢 Código de operación</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          maxLength={6}
+                          placeholder="123456"
+                          value={codigoOperacion}
+                          onChange={(e) => setCodigoOperacion(e.target.value.replace(/\D/g, ''))}
+                        />
+                        <small className="text-muted">
+                          Ingresa el código de 6 dígitos de tu comprobante de pago
+                        </small>
+                      </div>
                     </div>
 
                     {shouldShowCardForm ? (
@@ -654,98 +685,6 @@ export default function PagoPage() {
                       </div>
                     ) : null}
 
-                    {shouldShowQrPayment ? (
-                      <div className="col-12">
-                        <div
-                          className="card border-0 overflow-hidden"
-                          style={{
-                            borderRadius: '18px',
-                            background: methodMeta.background,
-                            color: '#ffffff',
-                            boxShadow: '0 18px 40px rgba(0,0,0,.16)',
-                          }}
-                        >
-                          <div className="card-body p-4 p-md-5">
-                            <div className="row g-4 align-items-center">
-                              <div className="col-12 col-md-5 d-flex justify-content-center">
-                                <div
-                                  className="p-3 rounded-4"
-                                  style={{
-                                    width: '100%',
-                                    maxWidth: '260px',
-                                    background: 'rgba(255,255,255,.12)',
-                                    backdropFilter: 'blur(8px)',
-                                  }}
-                                >
-                                  <div
-                                    className="rounded-4 d-flex align-items-center justify-content-center"
-                                    style={{
-                                      height: '220px',
-                                      background: 'linear-gradient(135deg, rgba(255,255,255,.96) 0%, rgba(255,255,255,.88) 100%)',
-                                      color: metodo === 'yape' ? '#7b1fa2' : '#1565c0',
-                                      position: 'relative',
-                                      overflow: 'hidden',
-                                    }}
-                                  >
-                                    <div style={{ textAlign: 'center' }}>
-                                      <div style={{ fontSize: '2.25rem', fontWeight: 900, letterSpacing: '1px' }}>
-                                        {metodo === 'yape' ? 'YAPE' : 'PLIN'}
-                                      </div>
-                                      <div style={{ fontSize: '.82rem', fontWeight: 700, marginTop: '.4rem' }}>
-                                        QR simulado
-                                      </div>
-                                      <div
-                                        style={{
-                                          width: '128px',
-                                          height: '128px',
-                                          margin: '1rem auto 0',
-                                          borderRadius: '18px',
-                                          border: '12px solid currentColor',
-                                          backgroundImage: 'radial-gradient(circle at 25% 25%, currentColor 10%, transparent 11%), radial-gradient(circle at 75% 25%, currentColor 10%, transparent 11%), radial-gradient(circle at 25% 75%, currentColor 10%, transparent 11%), radial-gradient(circle at 75% 75%, currentColor 10%, transparent 11%), linear-gradient(90deg, currentColor 0 14%, transparent 14% 28%, currentColor 28% 42%, transparent 42% 56%, currentColor 56% 70%, transparent 70% 84%, currentColor 84% 100%), linear-gradient(180deg, currentColor 0 14%, transparent 14% 28%, currentColor 28% 42%, transparent 42% 56%, currentColor 56% 70%, transparent 70% 84%, currentColor 84% 100%)',
-                                          opacity: .9,
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="col-12 col-md-7">
-                                <div className="d-flex flex-column gap-3">
-                                  <div>
-                                    <div style={{ fontSize: '.78rem', opacity: .8, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                      {methodMeta.qrLabel}
-                                    </div>
-                                    <div style={{ fontSize: '1.75rem', fontWeight: 900, lineHeight: 1.1 }}>
-                                      {summary.monto}
-                                    </div>
-                                  </div>
-
-                                  <div className="d-flex align-items-center gap-2">
-                                    <span className="badge bg-light text-dark px-3 py-2" style={{ borderRadius: '999px' }}>
-                                      Destino: 999-888-777
-                                    </span>
-                                  </div>
-
-                                  <p className="mb-0" style={{ fontSize: '1rem', fontWeight: 600 }}>
-                                    {methodMeta.instruction}
-                                  </p>
-
-                                  <button
-                                    type="button"
-                                    className="btn btn-light fw-semibold align-self-start"
-                                    style={{ borderRadius: '6px', padding: '.65rem 1.2rem', color: methodMeta.accent }}
-                                    onClick={submitPayment}
-                                  >
-                                    {methodMeta.buttonLabel}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
 
                     <div className="col-12 d-grid mt-1">
                       <button
@@ -760,8 +699,8 @@ export default function PagoPage() {
                         onMouseEnter={e => { if (!e.currentTarget.disabled) Object.assign(e.currentTarget.style, BTN_ORANGE.hover); }}
                         onMouseLeave={e => { Object.assign(e.currentTarget.style, BTN_ORANGE.leave); }}
                         disabled={loading || !reservaIdFromState}
-                        >
-                        {loading ? 'Procesando pago...' : (metodo === 'yape' ? '✅ Ya pagué con Yape' : metodo === 'plin' ? '✅ Ya pagué con Plin' : '💳 Confirmar pago con tarjeta')}
+                      >
+                        {loading ? 'Procesando pago...' : metodoPago === 'yape' ? '✅ Ya pagué con Yape' : metodoPago === 'plin' ? '✅ Ya pagué con Plin' : '💳 Confirmar pago con tarjeta'}
                       </button>
                     </div>
                   </div>

@@ -8,6 +8,7 @@ import DashboardPage from '../pages/admin/DashboardPage';
 import BusesPage from '../pages/admin/BusesPage';
 import AdminsPage from '../pages/admin/AdminsPage';
 import ViajesPage from '../pages/admin/ViajesPage';
+import VentaVentanillaPage from '../pages/admin/VentaVentanillaPage';
 import Navbar from '../components/Navbar';
 
 function RootLayout() {
@@ -75,6 +76,10 @@ const router = createBrowserRouter([
           {
             path: '/admin/viajes',
             element: <ViajesPage />,
+          },
+          {
+            path: '/admin/venta/:viaje_id',
+            element: <VentaVentanillaPage />,
           },
         ],
       },

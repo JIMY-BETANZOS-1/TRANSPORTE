@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 
 function mapAdmin(row) {
@@ -72,7 +73,6 @@ async function createAdmin(req, res) {
 			return res.status(409).json({ message: 'El email ya está registrado' });
 		}
 
-		const bcrypt = require('bcryptjs');
 		const salt = await bcrypt.genSalt(10);
 		const password_hash = await bcrypt.hash(password, salt);
 

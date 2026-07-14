@@ -10,12 +10,19 @@ export function AuthProvider({ children }) {
   async function login(credenciales) {
     const { data } = await api.post('/api/auth/login', credenciales);
     console.log(data);
+
+    const usuario = data.user || data.usuario || {};
+
     localStorage.setItem('token', data.token);
-    localStorage.setItem('rol', data.usuario.rol);
-    localStorage.setItem('es_principal', String(Boolean(data.usuario.es_principal)));
+    localStorage.setItem('rol', usuario.rol || '');
+    localStorage.setItem('es_principal', String(Boolean(usuario.es_principal)));
+    localStorage.setItem('user', JSON.stringify(usuario));
+
     setToken(data.token);
-    setRol(data.usuario.rol);
-    setEsPrincipal(Boolean(data.usuario.es_principal));
+    setRol(usuario.rol || null);
+    setEsPrincipal(Boolean(usuario.es_principal));
+
+    return data;
   }
 
   function logout() {

@@ -33,4 +33,18 @@ const verificarToken = async (req, res, next) => {
   }
 };
 
-module.exports = { verificarToken };
+// Alias para compatibilidad
+const authenticateToken = verificarToken;
+
+// Middleware para verificar que el usuario es admin
+const requireAdmin = (req, res, next) => {
+  if (!req.usuario) {
+    return res.status(401).json({ error: 'Autenticación requerida' });
+  }
+  if (req.usuario.rol !== 'admin') {
+    return res.status(403).json({ error: 'Acceso denegado. Se requiere rol de administrador.' });
+  }
+  next();
+};
+
+module.exports = { verificarToken, authenticateToken, requireAdmin };

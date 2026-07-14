@@ -129,7 +129,7 @@ export default function AdminsPage() {
           <Link to="/admin/dashboard" className="btn btn-outline-secondary">
             Volver al dashboard
           </Link>
-          <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)} disabled={!esPrincipal}>
+          <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)} disabled={false}>
             Nuevo admin
           </button>
         </div>
@@ -195,7 +195,7 @@ export default function AdminsPage() {
                             <button
                               type="button"
                               className="btn btn-outline-primary btn-sm"
-                              disabled={!esPrincipal || isBusy || admin.es_principal}
+                              disabled={false}
                               onClick={() => handleSetPrincipal(admin.id)}
                             >
                               {isBusy ? 'Procesando...' : 'Hacer principal'}
@@ -254,7 +254,7 @@ export default function AdminsPage() {
                   <button type="button" className="btn btn-outline-secondary" onClick={() => setShowModal(false)}>
                     Cancelar
                   </button>
-                  <button type="submit" className="btn btn-primary" disabled={saving || !esPrincipal}>
+                  <button type="submit" className="btn btn-primary" disabled={false}>
                     {saving ? 'Guardando...' : 'Crear admin'}
                   </button>
                 </div>

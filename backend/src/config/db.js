@@ -10,7 +10,23 @@ const pool = new Pool({
 });
 
 pool.connect()
-  .then(() => console.log('PostgreSQL conectado'))
+  .then(async (client) => {
+    console.log('PostgreSQL conectado');
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const sqlPath = path.resolve(__dirname, '..', '..', 'database', 'add_bus_features.sql');
+      if (fs.existsSync(sqlPath)) {
+        const sql = fs.readFileSync(sqlPath, 'utf8');
+        // Ejecutar las sentencias de ALTER TABLE para asegurar columnas necesarias
+        await client.query(sql);
+        console.log('Migración de columnas de buses aplicada (si faltaban).');
+      }
+      client.release();
+    } catch (err) {
+      console.error('Error aplicando migración de buses:', err);
+    }
+  })
   .catch(err => console.error('Error conectando a PostgreSQL:', err));
 
 module.exports = pool;

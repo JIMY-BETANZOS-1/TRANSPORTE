@@ -1,4 +1,13 @@
 const pool = require('../config/db');
+const transporter = require('../config/mailer');
+const { enviarComprobante } = require('../services/emailService');
+
+// ── Sanitization ──────────────────────────────────────────
+// Sanitizar strings para prevenir XSS
+function sanitize(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/[<>'"]/g, '').trim().substring(0, 200);
+}
 
 async function insertAudit(tabla, accion, usuario_id, datos, ip) {
 	try {
@@ -153,4 +162,171 @@ async function consultarPago(req, res) {
 	}
 }
 
-module.exports = { procesarPago, consultarPago };
+async function confirmarPago(req, res) {
+  const {
+    reserva_id, nombre, dni, email, telefono,
+    metodo_pago, codigo_operacion,
+    ruta, asiento, fecha_salida, monto,
+  } = req.body;
+
+  if (!reserva_id || !codigo_operacion || !email) {
+    return res.status(400).json({ message: 'reserva_id, codigo_operacion y email son obligatorios' });
+  }
+  if (!/^\d{6}$/.test(codigo_operacion)) {
+    return res.status(400).json({ message: 'El código de operación debe tener exactamente 6 dígitos' });
+  }
+
+  const metodosValidos = ['culqi', 'yape', 'plin'];
+  const metodo = metodosValidos.includes(metodo_pago) ? metodo_pago : 'yape';
+
+  // ── Sanitizar inputs ───────────────────────────────────
+  const nombreSafe = sanitize(nombre || '');
+  const rutaSafe = sanitize(ruta || '');
+  const asientoSafe = sanitize(typeof asiento === 'string' ? asiento : String(asiento?.codigo || ''));
+
+  try {
+    const reservaRes = await pool.query(
+      'SELECT id, estado FROM reservas WHERE id = $1',
+      [reserva_id]
+    );
+    if (!reservaRes.rows.length) {
+      return res.status(404).json({ message: 'Reserva no encontrada' });
+    }
+    if (reservaRes.rows[0].estado !== 'reservado') {
+      return res.status(409).json({ message: 'La reserva no está en estado válido para pagar' });
+    }
+
+    const codigoUsado = await pool.query(
+      'SELECT id FROM pagos WHERE codigo_operacion = $1',
+      [codigo_operacion]
+    );
+    if (codigoUsado.rows.length) {
+      return res.status(409).json({ message: 'El código de operación ya fue utilizado' });
+    }
+
+    await pool.query(
+      `INSERT INTO pagos (reserva_id, metodo, monto, estado, codigo_operacion)
+       VALUES ($1, $2, $3, 'pagado', $4)`,
+      [reserva_id, metodo, monto || 0, codigo_operacion]
+    );
+
+    await pool.query(
+      "UPDATE reservas SET estado = 'pagado' WHERE id = $1",
+      [reserva_id]
+    );
+
+    await enviarComprobante({
+      to: email,
+      reserva_id,
+      nombre: nombreSafe,
+      dni,
+      email,
+      telefono,
+      ruta: rutaSafe,
+      asiento: asientoSafe,
+      fecha_salida,
+      monto,
+      metodo_pago: metodo,
+    });
+
+    res.json({
+      success: true,
+      mensaje: `Pago confirmado. Comprobante enviado a ${email}`,
+    });
+  } catch (err) {
+    console.error('Error al confirmar pago:', err);
+    res.status(500).json({ message: 'Error al procesar el pago' });
+  }
+}
+
+async function confirmarPagoEfectivo(req, res) {
+  const {
+    reserva_id, nombre, dni, email, telefono,
+    monto, asiento, ruta, fecha_salida,
+  } = req.body;
+
+  if (!reserva_id || !monto) {
+    return res.status(400).json({ message: 'reserva_id y monto son obligatorios' });
+  }
+  if (!dni || !/^[0-9]{8}$/.test(dni)) {
+    return res.status(400).json({ message: 'DNI inválido' });
+  }
+  if (telefono && !/^[0-9]{9}$/.test(telefono)) {
+    return res.status(400).json({ message: 'Teléfono inválido' });
+  }
+
+  const nombreSafe = sanitize(nombre || 'Cliente de ventanilla');
+  const rutaSafe = sanitize(ruta || '');
+  const asientoSafe = sanitize(typeof asiento === 'string' ? asiento : String(asiento || ''));
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const reservaRes = await client.query(
+      'SELECT id, estado, pasajero_id FROM reservas WHERE id = $1 FOR UPDATE',
+      [reserva_id]
+    );
+    if (!reservaRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Reserva no encontrada' });
+    }
+
+    const reserva = reservaRes.rows[0];
+    if (reserva.estado !== 'reservado') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'La reserva no está en estado válido para pagar' });
+    }
+
+    if (reserva.pasajero_id) {
+      await client.query(
+        `UPDATE pasajeros SET nombre = COALESCE($1, nombre), dni = COALESCE($2, dni), email = COALESCE($3, email), telefono = COALESCE($4, telefono) WHERE id = $5`,
+        [nombreSafe, dni, email || null, telefono || null, reserva.pasajero_id]
+      );
+    } else {
+      const pasajeroRes = await client.query(
+        `INSERT INTO pasajeros (nombre, dni, email, telefono) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [nombreSafe, dni, email || null, telefono || null]
+      );
+      await client.query(
+        'UPDATE reservas SET pasajero_id = $1 WHERE id = $2',
+        [pasajeroRes.rows[0].id, reserva_id]
+      );
+    }
+
+    const pagoRes = await client.query(
+      `INSERT INTO pagos (reserva_id, metodo, monto, estado) VALUES ($1, 'efectivo', $2, 'pagado') RETURNING id`,
+      [reserva_id, monto]
+    );
+
+    await client.query("UPDATE reservas SET estado = 'pagado' WHERE id = $1", [reserva_id]);
+
+    await client.query('COMMIT');
+
+    if (email) {
+      await enviarComprobante({
+        to: email,
+        reserva_id,
+        nombre: nombreSafe,
+        dni,
+        email,
+        telefono,
+        ruta: rutaSafe,
+        asiento: asientoSafe,
+        fecha_salida,
+        monto,
+        metodo_pago: 'efectivo',
+      });
+    }
+
+    res.json({ success: true, mensaje: 'Pago en efectivo confirmado correctamente.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error al confirmar pago en efectivo:', err);
+    res.status(500).json({ message: 'Error al procesar el pago en efectivo' });
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { procesarPago, consultarPago, confirmarPago, confirmarPagoEfectivo };

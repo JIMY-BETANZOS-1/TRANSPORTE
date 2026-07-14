@@ -30,6 +30,7 @@ function mapViaje(row) {
 function buildListFilters(query) {
 	const conditions = ["v.estado = 'en_venta'"];
 	const params = [];
+	const fecha = typeof query.fecha === 'string' ? query.fecha.trim() : '';
 
 	if (query.origen) {
 		params.push(`%${query.origen}%`);
@@ -41,8 +42,8 @@ function buildListFilters(query) {
 		conditions.push(`r.destino ILIKE $${params.length}`);
 	}
 
-	if (query.fecha) {
-		params.push(query.fecha);
+	if (fecha) {
+		params.push(fecha);
 		conditions.push(`DATE(v.fecha_salida) = $${params.length}`);
 	} else {
 		conditions.push('v.fecha_salida >= NOW()');

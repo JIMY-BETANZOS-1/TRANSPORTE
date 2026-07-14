@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/useAuth';
 import api from '../../services/api';
 
@@ -87,13 +87,42 @@ export default function ViajesPage() {
     [viajes]
   );
 
+  const navigate = useNavigate();
+
   if (rol !== 'admin') {
     return <Navigate to="/buscar" replace />;
   }
 
+  function calcularFechaLlegada(fechaSalida, duracionHoras) {
+    if (!fechaSalida || !duracionHoras) return '';
+    const salida = new Date(fechaSalida);
+    const duracion = Number(duracionHoras);
+    if (Number.isNaN(salida.getTime()) || Number.isNaN(duracion)) return '';
+    const llegada = new Date(salida.getTime() + duracion * 60 * 60 * 1000);
+    return llegada.toISOString().slice(0, 16);
+  }
+
+  const selectedRuta = useMemo(
+    () => rutas.find((ruta) => String(ruta.id) === String(form.ruta_id)),
+    [rutas, form.ruta_id]
+  );
+
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+
+    setForm((current) => {
+      const next = { ...current, [name]: value };
+
+      if (name === 'ruta_id' || name === 'fecha_salida') {
+        const ruta = name === 'ruta_id'
+          ? rutas.find((rutaItem) => String(rutaItem.id) === String(value))
+          : selectedRuta;
+
+        next.fecha_llegada = calcularFechaLlegada(next.fecha_salida, ruta?.duracion_horas);
+      }
+
+      return next;
+    });
   }
 
   async function handleCreate(event) {
@@ -212,6 +241,14 @@ export default function ViajesPage() {
                             </button>
                             <button
                               type="button"
+                              className="btn btn-sm"
+                              style={{ background: '#2e7d32', color: '#fff', borderRadius: '8px' }}
+                              onClick={() => navigate(`/admin/venta/${viaje.id}`)}
+                            >
+                              🎫 Vender
+                            </button>
+                            <button
+                              type="button"
                               className="btn btn-outline-danger btn-sm"
                               disabled={isBusy || viaje.estado === 'cancelado'}
                               onClick={() => handleChangeEstado(viaje.id, 'cancelado')}
@@ -258,6 +295,21 @@ export default function ViajesPage() {
                         </option>
                       ))}
                     </select>
+                    {selectedRuta ? (
+                      <div style={{
+                        background: '#e8f5e9',
+                        border: '1px solid #a5d6a7',
+                        borderRadius: '8px',
+                        padding: '.6rem 1rem',
+                        fontSize: '.85rem',
+                        color: '#2e7d32',
+                        marginTop: '.5rem',
+                      }}>
+                        📍 {selectedRuta.origen} → {selectedRuta.destino} &nbsp;|&nbsp;
+                        📏 {selectedRuta.distancia_km} km &nbsp;|&nbsp;
+                        ⏱️ {selectedRuta.duracion_horas} horas estimadas
+                      </div>
+                    ) : null}
                   </div>
                   <div className="col-12 col-md-6">
                     <label htmlFor="bus_id" className="form-label">Bus</label>
@@ -277,6 +329,7 @@ export default function ViajesPage() {
                   <div className="col-12 col-md-6">
                     <label htmlFor="fecha_llegada" className="form-label">Fecha llegada</label>
                     <input id="fecha_llegada" name="fecha_llegada" type="datetime-local" className="form-control" value={form.fecha_llegada} onChange={handleChange} />
+                    <div className="form-text">Calculada automáticamente según duración de la ruta.</div>
                   </div>
                   <div className="col-12 col-md-6">
                     <label htmlFor="horas_antes_venta" className="form-label">

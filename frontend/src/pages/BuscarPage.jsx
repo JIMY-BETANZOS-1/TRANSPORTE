@@ -4,6 +4,10 @@ import api from '../services/api';
 
 const POPULAR_DESTINATIONS = [
   {
+    city: 'Lima',
+    image: 'https://images.unsplash.com/photo-1577717903315-1691ae25ab3f?q=80&w=600&auto=format&fit=crop',
+  },
+  {
     city: 'Cusco',
     image: 'https://images.unsplash.com/photo-1587595431973-160d0d94add1?w=400',
   },
@@ -43,6 +47,15 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function formatDateOnly(value) {
+  if (!value) return 'Fecha no disponible';
+
+  const date = new Date(value);
+  return new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'long',
+  }).format(date);
+}
+
 function formatDuration(hours) {
   if (hours === null || hours === undefined || Number.isNaN(Number(hours))) {
     return 'Duración no disponible';
@@ -57,8 +70,19 @@ function formatDuration(hours) {
   return `${wholeHours} h ${minutes} min`;
 }
 
+function normalizeText(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getTarifasFromSource(source) {
+  if (Array.isArray(source)) return source;
+  if (Array.isArray(source?.tarifas)) return source.tarifas;
+  if (Array.isArray(source?.ruta?.tarifas)) return source.ruta.tarifas;
+  return [];
+}
+
 function getLowestTariff(viaje) {
-  const tarifas = viaje?.ruta?.tarifas;
+  const tarifas = getTarifasFromSource(viaje?.ruta || viaje);
   if (!Array.isArray(tarifas) || tarifas.length === 0) return null;
 
   return tarifas.reduce((lowest, tarifa) => {
@@ -69,14 +93,26 @@ function getLowestTariff(viaje) {
   }, null);
 }
 
-function getMinimumFareFromTarifas(tarifas) {
-  if (!Array.isArray(tarifas) || tarifas.length === 0) return null;
+function getMinimumFareFromTarifas(source) {
+  const tarifas = getTarifasFromSource(source);
+  if (tarifas.length === 0) return null;
 
   return tarifas.reduce((lowest, tarifa) => {
     const precio = Number(tarifa?.precio);
     if (Number.isNaN(precio)) return lowest;
     return lowest === null || precio < lowest ? precio : lowest;
   }, null);
+}
+
+function matchesPopularDestination(route, destinationCity) {
+  const destinationKey = normalizeText(destinationCity);
+  if (!destinationKey) return false;
+
+  const originText = normalizeText(route?.origen || route?.ruta?.origen);
+  const destinationText = normalizeText(route?.destino || route?.ruta?.destino || route?.nombre || route?.ruta?.nombre);
+  const routeNameText = normalizeText(route?.nombre || route?.ruta?.nombre);
+
+  return originText.includes('lima') && (destinationText.includes(destinationKey) || routeNameText.includes(destinationKey));
 }
 
 function getServiceLevelColor(viaje) {
@@ -128,15 +164,14 @@ export default function BuscarPage() {
         const nextPrices = {};
 
         POPULAR_DESTINATIONS.forEach((destination) => {
-          const destinationKey = destination.city.trim().toLowerCase();
+          const destinationKey = String(destination.city || '').trim().toLowerCase();
           const matchingRoutes = rutas.filter((ruta) => {
-            const origenRuta = String(ruta?.origen || '').trim().toLowerCase();
             const destinoRuta = String(ruta?.destino || '').trim().toLowerCase();
-            return origenRuta === 'lima' && destinoRuta === destinationKey;
+            return destinoRuta === destinationKey;
           });
 
           const minimum = matchingRoutes.reduce((acc, ruta) => {
-            const fare = getMinimumFareFromTarifas(ruta?.tarifas);
+            const fare = getMinimumFareFromTarifas(ruta);
             if (fare === null) return acc;
             return acc === null || fare < acc ? fare : acc;
           }, null);
@@ -185,16 +220,30 @@ export default function BuscarPage() {
     }
   }
 
-  function handlePopularDestinationClick(city) {
-    setOrigen('Lima');
+  function handlePopularDestinationClick(event, city) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    setOrigen('');
     setDestino(city);
-    window.setTimeout(() => destinoInputRef.current?.focus(), 250);
-    performSearch({ origen: 'Lima', destino: city }, true);
+    setFecha('');
+    void performSearch({ destino: city }, true);
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
-    await performSearch({ origen, destino, fecha }, false);
+
+    const searchParams = {};
+    if (origen.trim()) searchParams.origen = origen.trim();
+    if (destino.trim()) searchParams.destino = destino.trim();
+    if (fecha) searchParams.fecha = fecha;
+
+    if (!searchParams.origen && !searchParams.destino) {
+      setError('Ingresa al menos un destino para buscar.');
+      return;
+    }
+
+    await performSearch(searchParams, false);
   }
 
   return (
@@ -294,8 +343,7 @@ export default function BuscarPage() {
                       style={{ borderRadius: 'var(--radius-sm)', padding: '.65rem .9rem' }}
                       value={origen}
                       onChange={(event) => setOrigen(event.target.value)}
-                      placeholder="Lima"
-                      required
+                      placeholder="Cualquier origen"
                     />
                   </div>
 
@@ -312,23 +360,45 @@ export default function BuscarPage() {
                       value={destino}
                       onChange={(event) => setDestino(event.target.value)}
                       placeholder="Cusco"
-                      required
                     />
                   </div>
 
                   <div className="col-12 col-md-4">
                     <label htmlFor="fecha" className="form-label fw-semibold" style={{ color: 'var(--gray-800)' }}>
-                      📅 Fecha de viaje
+                      📅 Fecha (opcional)
                     </label>
-                    <input
-                      id="fecha"
-                      type="date"
-                      className="form-control"
-                      style={{ borderRadius: 'var(--radius-sm)', padding: '.65rem .9rem' }}
-                      value={fecha}
-                      onChange={(event) => setFecha(event.target.value)}
-                      required
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        id="fecha"
+                        type="date"
+                        className="form-control"
+                        style={{ borderRadius: 'var(--radius-sm)', padding: '.65rem .9rem' }}
+                        value={fecha}
+                        onChange={(event) => setFecha(event.target.value)}
+                      />
+                      {fecha ? (
+                        <button
+                          type="button"
+                          onClick={() => setFecha('')}
+                          aria-label="Limpiar fecha"
+                          style={{
+                            position: 'absolute',
+                            right: '0.85rem',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--gray-700)',
+                            fontSize: '1rem',
+                            cursor: 'pointer',
+                            padding: 0,
+                            lineHeight: 1,
+                          }}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
@@ -367,7 +437,7 @@ export default function BuscarPage() {
             <div style={{ width: '48px', height: '3px', backgroundColor: 'var(--accent)', borderRadius: '2px', marginTop: '6px' }} />
           </div>
           <span style={{ fontSize: '.78rem', color: 'var(--gray-600)', fontWeight: 600 }}>
-            Precio desde Lima
+            Precio desde
           </span>
         </div>
 
@@ -390,7 +460,7 @@ export default function BuscarPage() {
                   backgroundColor: '#0f172a',
                   cursor: 'pointer',
                 }}
-                onClick={() => handlePopularDestinationClick(destination.city)}
+                onClick={(event) => handlePopularDestinationClick(event, destination.city)}
               >
                 <div
                   style={{
@@ -495,6 +565,15 @@ export default function BuscarPage() {
 
         {!loading && resultados.length > 0 ? (
           <>
+            <div className="mb-3" style={{ color: 'var(--gray-600)', fontSize: '.95rem' }}>
+              {destino
+                ? fecha
+                  ? `Viajes hacia ${destino} para el ${formatDateOnly(fecha)}`
+                  : `Todos los viajes disponibles hacia ${destino}`
+                : origen
+                  ? `Todos los viajes desde ${origen}`
+                  : 'Todos los viajes disponibles'}
+            </div>
             <div className="mb-4">
               <h2 style={{ fontSize: '1.25rem', color: 'var(--primary)', fontWeight: 700 }}>
                 {resultados.length} {resultados.length === 1 ? 'viaje encontrado' : 'viajes encontrados'}

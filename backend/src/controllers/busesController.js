@@ -32,13 +32,13 @@ async function getBusById(req, res) {
 		if (!busRes.rows.length) return res.status(404).json({ message: 'Bus no encontrado' });
 		const bus = busRes.rows[0];
 
-		// intentar obtener asientos (si existe la tabla `asientos`)
 		let asientos = [];
 		try {
-			const s = await pool.query('SELECT * FROM asientos WHERE bus_id = $1 ORDER BY numero', [id]);
+			// CORRECCIÓN: Apuntar a configuracion_asientos y ordenar por codigo
+			const s = await pool.query('SELECT * FROM configuracion_asientos WHERE bus_id = $1 ORDER BY codigo', [id]);
 			asientos = s.rows;
 		} catch (e) {
-			// tabla asientos puede no existir; no interrumpir la respuesta
+			console.error('Error al obtener configuración de asientos:', e);
 		}
 
 		res.json({ ...bus, asientos });
